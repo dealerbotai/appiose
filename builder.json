@@ -1,0 +1,13 @@
+{
+  "project": "EskinStore",
+  "platform": "ios",
+  "github": {
+    "owner": "dealerbotai",
+    "repo": "appiose"
+  },
+  "ios": {
+    "path": "ios",
+    "scheme": "EskinStore",
+    "signing": false
+  }
+}
