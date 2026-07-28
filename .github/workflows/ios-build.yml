@@ -28,8 +28,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install npm dependencies
-        run: |
-          npm ci
+        run: npm ci
 
       - name: Setup CocoaPods
         uses: maxim-lobanov/setup-cocoapods@v1
@@ -37,60 +36,47 @@ jobs:
           podfile-path: ios/Podfile
 
       - name: Install Pods
+        run: cd ios && pod install
+
+      - name: Archive & Export IPA
         run: |
           cd ios
-          pod install
-        env:
-          CP_HOME_DIR: /Users/runner/.cocoapods
-
-      - name: Build React Native bundle
-        run: |
-          npx react-native bundle \
-            --platform ios \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output ios/main.jsbundle \
-            --assets-dest ios/assets
-
-      - name: Build IPA (unsigned)
-        if: ${{ github.event.inputs.unsigned == 'true' || github.event.inputs.unsigned == '' }}
-        run: |
-          cd ios
-          xcodebuild -workspace EskinStore.xcworkspace \
+          xcodebuild archive \
+            -workspace EskinStore.xcworkspace \
             -scheme EskinStore \
             -sdk iphoneos \
             -configuration Release \
-            -derivedDataPath build \
+            -archivePath EskinStore.xcarchive \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            clean build
+            CODE_SIGNING_ALLOWED=NO
 
-          # Create Payload directory and .app
-          mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/EskinStore.app Payload/
-          zip -r EskinStore.ipa Payload
-          mv EskinStore.ipa ../dist/EskinStore.ipa
-
-      - name: Build IPA (signed)
-        if: ${{ github.event.inputs.unsigned == 'false' }}
-        run: |
-          cd ios
-          xcodebuild -workspace EskinStore.xcworkspace \
-            -scheme EskinStore \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath build \
-            -allowProvisioningUpdates \
-            clean build
+          # Create ExportOptions.plist for unsigned build
+          mkdir -p export
+          cat > export/ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>development</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingDisabled</key>
+            <true/>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
 
           xcodebuild -exportArchive \
-            -archivePath build/Build/Products/Release-iphoneos/EskinStore.xcarchive \
+            -archivePath EskinStore.xcarchive \
             -exportPath export \
-            -exportOptionsPlist ExportOptions.plist
+            -exportOptionsPlist export/ExportOptions.plist
 
           mkdir -p ../dist
-          cp export/EskinStore.ipa ../dist/EskinStore.ipa
+          mv export/EskinStore.ipa ../dist/
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
