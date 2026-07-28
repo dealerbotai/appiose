@@ -1,0 +1,100 @@
+# iOS Build Workflow for EskinStore
+# Generated for ios-builder (https://github.com/MobAI-App/ios-builder)
+name: iOS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      unsigned:
+        description: 'Build unsigned IPA'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: Build iOS App
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          npm ci
+
+      - name: Setup CocoaPods
+        uses: maxim-lobanov/setup-cocoapods@v1
+        with:
+          podfile-path: ios/Podfile
+
+      - name: Install Pods
+        run: |
+          cd ios
+          pod install
+        env:
+          CP_HOME_DIR: /Users/runner/.cocoapods
+
+      - name: Build React Native bundle
+        run: |
+          npx react-native bundle \
+            --platform ios \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output ios/main.jsbundle \
+            --assets-dest ios/assets
+
+      - name: Build IPA (unsigned)
+        if: ${{ github.event.inputs.unsigned == 'true' || github.event.inputs.unsigned == '' }}
+        run: |
+          cd ios
+          xcodebuild -workspace EskinStore.xcworkspace \
+            -scheme EskinStore \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+          # Create Payload directory and .app
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/EskinStore.app Payload/
+          zip -r EskinStore.ipa Payload
+          mv EskinStore.ipa ../dist/EskinStore.ipa
+
+      - name: Build IPA (signed)
+        if: ${{ github.event.inputs.unsigned == 'false' }}
+        run: |
+          cd ios
+          xcodebuild -workspace EskinStore.xcworkspace \
+            -scheme EskinStore \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            -allowProvisioningUpdates \
+            clean build
+
+          xcodebuild -exportArchive \
+            -archivePath build/Build/Products/Release-iphoneos/EskinStore.xcarchive \
+            -exportPath export \
+            -exportOptionsPlist ExportOptions.plist
+
+          mkdir -p ../dist
+          cp export/EskinStore.ipa ../dist/EskinStore.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EskinStore-IPA
+          path: dist/EskinStore.ipa
+          if-no-files-found: error
